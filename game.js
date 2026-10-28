@@ -145,8 +145,22 @@
   const W = 600;          // chiều rộng logic cố định
   let H = 800;            // chiều cao logic thay đổi theo tỉ lệ màn hình
   let scale = 1, dpr = 1;
-  const GROUND = 185;
-  const OX = W / 2, OY = 118;
+  // Màn ngang/vuông dùng bố cục "gọn": trời thấp hơn 50px để khung rộng hơn mà phần đất vẫn sâu
+  let compact = false, GROUND = 185, OY = 118;
+  const OX = W / 2;
+  // Hệ số tốc độ móc: quãng đường trung bình tới đáy mỏ so với hình học chuẩn (cao 800, mặt đất 185)
+  // => màn hình nào cũng mất cùng thời gian kéo như lúc tính mục tiêu trong levels.js
+  let geoK = 1;
+  function calcGeo() {
+    const b = mineBounds();
+    let real = 0, calib = 0;
+    for (let i = 0; i < 6; i++) for (let j = 0; j < 6; j++) {
+      const x = 40 + i * (W - 80) / 5 - OX, fy = (j + 0.5) / 6;
+      real += Math.hypot(x, b.top + fy * (b.bottom - b.top) - OY);
+      calib += Math.hypot(x, 225 + fy * 549 - 118);
+    }
+    geoK = real / calib;
+  }
   const bg = document.createElement('canvas');
   // Ảnh nền menu (asset pack A). Thiếu ảnh thì menu dùng nền vẽ bằng code.
   const menuImg = new Image();
@@ -156,7 +170,11 @@
   function resize() {
     const cw = window.innerWidth, ch = window.innerHeight;
     dpr = Math.min(window.devicePixelRatio || 1, 3);
-    H = Math.round(Math.min(1400, Math.max(640, W * ch / cw)));   // màn ngang: tối thiểu 640 để phần đất đủ sâu (thêm viền hai bên)
+    const v = W * ch / cw;
+    compact = v < 760;
+    GROUND = compact ? 135 : 185; OY = GROUND - 67;
+    H = Math.round(Math.min(1400, Math.max(compact ? 560 : 640, v)));   // màn ngang: tối thiểu 560 (thêm viền hai bên nếu cần)
+    calcGeo();
     scale = Math.min(cw / W, ch / H);
     canvas.style.width = Math.round(W * scale) + 'px';
     canvas.style.height = Math.round(H * scale) + 'px';
@@ -470,8 +488,8 @@
   const canUpgrade = () => UPGRADES.some(u => upPrice(u) !== null && save.wallet >= upPrice(u));
   const grabBonus = () => 4 * save.up.claw;                          // bán kính kẹp +4/cấp
   const pullMul = () => (perks.strength ? 1.8 : 1) * (1 + 0.12 * save.up.winch);
-  const dropSpeed = () => 460 * (1 + 0.12 * save.up.drop);
-  function pullSpeed() { return hook.item ? (560 / hook.item.weight) * pullMul() : 650; }
+  const dropSpeed = () => 460 * (1 + 0.12 * save.up.drop) * geoK;
+  function pullSpeed() { return (hook.item ? (560 / hook.item.weight) * pullMul() : 650) * geoK; }
 
   function buyUpgrade(u) {
     const price = upPrice(u);
@@ -1130,17 +1148,24 @@
   }
 
   function drawHUD() {
-    ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(0, 0, W, 66);
+    // bố cục gọn: hai hộp ở hai góc, chừa giữa cho thợ mỏ; nút tạm dừng nằm cạnh hộp phải
+    const pauseX = compact ? W - 254 : W / 2 - 24;
+    if (compact) {
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.beginPath(); ctx.roundRect(4, 2, 196, 62, 12); ctx.fill();
+      ctx.beginPath(); ctx.roundRect(W - 200, 2, 196, 62, 12); ctx.fill();
+    } else { ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(0, 0, W, 66); }
     const ps = 20 * (1 + scorePop * 0.25);
     text(`${L.score}: $${Math.round(shownScore)}`, 14, 20, ps, scorePop > 0.5 ? '#fff6b0' : '#ffe066', 'left');
-    if (comboMul() > 1) text(`🔥 x${comboMul()}`, W / 2 + 70, 22, 18, '#ff9a2e');
+    if (comboMul() > 1) text(`🔥 x${comboMul()}`, compact ? W - 14 : W / 2 + 70, compact ? 80 : 22, 18, '#ff9a2e', compact ? 'right' : 'center');
     text(rush ? `🏆 ${L.record}: $${save.rushBest}` : `${L.target}: $${lvl.target}`, 14, 46, 17, '#ffffff', 'left');
     text(`${L.time}: ${Math.ceil(timeLeft)}`, W - 14, 20, 20, timeLeft <= 10 ? '#ff6b6b' : '#fff', 'right');
     text(rush ? '⚡ ' + L.rush : `${L.level} ${n}`, W - 14, 46, 17, rush ? '#ffd23f' : '#fff', 'right');
-    if (!rush) for (let k = 0; k < 3; k++) Art.star(ctx, W / 2 - 60 + k * 18, 52, 7, score >= lvl.stars[k]);
+    const sx = compact ? 22 : W / 2 - 60, sy = compact ? 78 : 52;
+    if (!rush) for (let k = 0; k < 3; k++) Art.star(ctx, sx + k * 18, sy, 7, score >= lvl.stars[k]);
     const icons = (perks.strength ? '💪' : '') + (perks.clover ? '🍀' : '') + (perks.polish ? '💎' : '') + (perks.rockbook ? '📘' : '');
-    if (icons) text(icons, W / 2 + 50, 50, 15);
-    iconButton(W / 2 - 24, 4, 48, 'icon_pause', 'II', () => { state = 'pause'; });
+    if (icons) text(icons, compact ? 76 : W / 2 + 50, compact ? 78 : 50, 15, '#fff', compact ? 'left' : 'center');
+    iconButton(pauseX, 4, 48, 'icon_pause', 'II', () => { state = 'pause'; });
     const active = (hook.mode === 'retract' && hook.item && save.dynamite > 0) || rescueOpen();
     const bx = W - 84, by = H - 84;
     ctx.globalAlpha = active ? 1 : 0.55;

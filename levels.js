@@ -127,7 +127,15 @@
     // Thời gian ngắn => không thể vét sạch màn, nâng cấp (tời nhanh, thêm giờ...) tạo khác biệt rõ.
     const time = tag === 'bonus' ? 28 : tag === 'boss' ? 50 : 40;
     // expUp: mức nâng cấp dự kiến của người chơi khi tới màn này
-    const reach = estimate(items, time, expUp);
+    const picked = new Set();
+    const reach = estimate(items, time, expUp, picked);
+    // Bỏ vàng/đá quý thừa: chỉ giữ những món người chơi tối ưu kịp kéo trong thời gian
+    // => tổng giá trị trong màn sát với mục tiêu, món nào cũng đáng kể. Đá/rác giữ lại làm chướng ngại.
+    // Màn thưởng giữ nguyên ("vàng khắp nơi").
+    if (tag !== 'bonus') for (let k = items.length - 1; k >= 0; k--) {
+      const it = items[k];
+      if (!JUNK.has(it.kind) && !picked.has(it)) items.splice(k, 1);
+    }
     // Đồng Cỏ tăng dần 50% -> 70%, từ màn 11 cố định 70% của mức kéo được KHI ĐÃ CÓ nâng cấp dự kiến
     const pct = n <= 10 ? 0.5 + 0.2 * (n - 1) / 9 : 0.7;
     const round50 = (v) => Math.max(50, Math.round(v / 50) * 50);
@@ -167,17 +175,17 @@
   };
 
   // Ước lượng số tiền kiếm được: người chơi luôn kéo món "đáng giá nhất trên mỗi giây", có nâng cấp `up`
-  function estimate(items, time, up) {
+  function estimate(items, time, up, picked) {
     const top = 225, span = 549, OX = W / 2, OY = 118; // hình học chuẩn (màn hình cao 800, mặt đất 185)
     time += 4 * up.time;
     const drop = 460 * (1 + 0.12 * up.drop), pull = 1 + 0.12 * up.winch, wait = 1.2 - 0.05 * up.claw;
     const opts = items.filter(it => it.kind !== 'tnt').map(it => {
       const d = Math.hypot(it.x - OX, top + it.fy * span - OY);
       const v = it.kind === 'bag' ? 150 : it.value;
-      return { v, t: d / drop + d / ((560 / it.weight) * pull) + wait };
+      return { it, v, t: d / drop + d / ((560 / it.weight) * pull) + wait };
     }).sort((a, b) => b.v / b.t - a.v / a.t);
     let got = 0;
-    for (const o of opts) if (o.t <= time) { time -= o.t; got += o.v; }
+    for (const o of opts) if (o.t <= time) { time -= o.t; got += o.v; if (picked) picked.add(o.it); }
     return got;
   }
 
