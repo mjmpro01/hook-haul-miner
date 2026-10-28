@@ -127,21 +127,12 @@
     // Thời gian ngắn => không thể vét sạch màn, nâng cấp (tời nhanh, thêm giờ...) tạo khác biệt rõ.
     const time = tag === 'bonus' ? 28 : tag === 'boss' ? 50 : 40;
     // expUp: mức nâng cấp dự kiến của người chơi khi tới màn này
-    const picked = new Set();
+    const picked = [];   // các món người chơi tối ưu kéo, theo thứ tự "đáng giá nhất trên mỗi giây"
     const reach = estimate(items, time, expUp, picked);
-    // Bỏ vàng/đá quý thừa: chỉ giữ những món người chơi tối ưu kịp kéo trong thời gian
-    // => tổng giá trị trong màn sát với mục tiêu, món nào cũng đáng kể. Đá/rác giữ lại làm chướng ngại.
-    // Màn thưởng giữ nguyên ("vàng khắp nơi").
-    if (tag !== 'bonus') for (let k = items.length - 1; k >= 0; k--) {
-      const it = items[k];
-      if (!JUNK.has(it.kind) && !picked.has(it)) items.splice(k, 1);
-    }
     // Đồng Cỏ tăng dần 50% -> 70%, từ màn 11 cố định 70% của mức kéo được KHI ĐÃ CÓ nâng cấp dự kiến
     const pct = n <= 10 ? 0.5 + 0.2 * (n - 1) / 9 : 0.7;
     const round50 = (v) => Math.max(50, Math.round(v / 50) * 50);
-    const target = round50(reach * pct);
-    const s2 = Math.max(round50(reach * (pct + 1) / 2), target + 50);
-    const s3 = Math.max(round50(reach * 0.95), s2 + 50);
+    const floor50 = (v) => Math.max(50, Math.floor(v / 50) * 50);
     // Mỗi thế giới một loài quái đi ngang: chạm dây/móc là thua ngay.
     // Đồng Cỏ từ màn 6 (cho người mới làm quen), các thế giới khác từ màn 3; không có ở màn thưởng.
     const monster = hasMonster(n) ? {
@@ -150,9 +141,24 @@
       speed: 120 + w * 12 + i * 3,
     } : null;
     // màn có quái: người chơi phải chờ né => hạ mục tiêu một chút
-    const k = monster ? 0.92 : 1;
-    const t1 = round50(target * k), m2 = round50(s2 * k), m3 = round50(s3 * k);
-    return { n, world: w, worldId: world.id, idx: i, tag, items, time, expUp: expUp.total, target: t1, stars: [t1, Math.max(m2, t1 + 50), Math.max(m3, m2 + 50, t1 + 100)], reach, monster };
+    const t1 = round50(reach * pct * (monster ? 0.92 : 1));
+
+    // Tổng giá trị trong màn chỉ nhỉnh hơn mục tiêu (MARGIN): giữ các món "đáng nhất" cho tới khi đủ, bỏ phần còn lại.
+    // Đá/rác giữ làm chướng ngại. Túi bí ẩn không tính (có thể ra thuốc nổ thay vì tiền); sò tính nửa giá (lúc đóng chỉ $40).
+    const MARGIN = n <= 3 ? 1.3 : tag === 'bonus' ? 1.25 : 1.12;
+    const worth = (it) => (it.kind === 'bag' ? 0 : it.kind === 'clam' ? 170 : it.value);
+    const keep = new Set();
+    let total = 0;
+    for (const it of picked) {
+      if (JUNK.has(it.kind)) continue;
+      if (total >= t1 * MARGIN && it.kind !== 'bag') continue;
+      keep.add(it); total += worth(it);
+    }
+    for (let k = items.length - 1; k >= 0; k--) if (!JUNK.has(items[k].kind) && !keep.has(items[k])) items.splice(k, 1);
+    // 3 sao = lượm gần hết; 2 sao = giữa mục tiêu và 3 sao
+    const m3 = Math.max(floor50(total * 0.97), t1 + 100);
+    const m2 = Math.max(floor50((t1 + m3) / 2), t1 + 50);
+    return { n, world: w, worldId: world.id, idx: i, tag, items, time, expUp: expUp.total, target: t1, stars: [t1, m2, Math.max(m3, m2 + 50)], reach, total, monster };
   }
 
   // Giá nâng cấp vĩnh viễn (5 cấp mỗi loại) — dùng chung cho game và cho phần tính mục tiêu
@@ -185,7 +191,7 @@
       return { it, v, t: d / drop + d / ((560 / it.weight) * pull) + wait };
     }).sort((a, b) => b.v / b.t - a.v / a.t);
     let got = 0;
-    for (const o of opts) if (o.t <= time) { time -= o.t; got += o.v; if (picked) picked.add(o.it); }
+    for (const o of opts) if (o.t <= time) { time -= o.t; got += o.v; if (picked) picked.push(o.it); }
     return got;
   }
 

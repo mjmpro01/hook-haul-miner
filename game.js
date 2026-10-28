@@ -66,7 +66,7 @@
       shop: 'Cửa hàng', play: 'Vào màn ▶', next: 'Màn tiếp ▶', retry: 'Chơi lại', map: 'Bản đồ',
       resume: 'Tiếp tục', paused: 'Tạm dừng', wallet: 'Ví', earned: 'Cộng vào ví', best: 'Kỷ lục màn',
       musicOn: '♪ Nhạc: Bật', musicOff: '♪ Nhạc: Tắt', allClear: 'Bạn đã phá đảo cả 60 màn!',
-      bonus: 'MÀN THƯỞNG: vàng khắp nơi!', boss: 'MÀN TRÙM: cục vàng khổng lồ!',
+      bonus: 'MÀN THƯỞNG: ít giờ, toàn vàng dễ lượm!', boss: 'MÀN TRÙM: cục vàng khổng lồ!',
       worlds: ['Đồng Cỏ', 'Sa Mạc', 'Hang Động', 'Núi Băng', 'Núi Lửa', 'Đáy Biển'],
       tips: [
         'Vàng to nặng, kéo lâu. Kim cương nhẹ mà đắt!',
@@ -95,6 +95,7 @@
         earn: (g) => `Kiếm $${g} vào ví`, rush: (g) => `Chơi Cơn sốt vàng ${g} lần`, dyn: (g) => `Dùng ${g} thuốc nổ`, rescue: (g) => `Thoát hiểm ${g} lần`,
         stars: (g) => `Thu ${g} ⭐`, up: (g) => `Nâng cấp tổng ${g} cấp`, rushRec: (g) => `Kỷ lục Cơn sốt vàng $${g}` },
       worldClear: (w) => `Phá đảo ${w}`,
+      revive: '📺 QC: Hồi sinh, chơi tiếp', revived: '💪 Hồi sinh!', reviveMon: 'Giữ nguyên tiền, quái đã bỏ đi', reviveTime: (s) => `Giữ nguyên tiền, +${s} giây`,
       dClaw: 'Dễ móc trúng đồ hơn', dWinch: 'Kéo mọi thứ lên nhanh hơn', dDrop: 'Móc lao xuống nhanh hơn', dTime: 'Thêm giờ mỗi màn',
     },
     en: {
@@ -105,7 +106,7 @@
       shop: 'Shop', play: 'Start ▶', next: 'Next level ▶', retry: 'Retry', map: 'Map',
       resume: 'Resume', paused: 'Paused', wallet: 'Wallet', earned: 'Added to wallet', best: 'Level best',
       musicOn: '♪ Music: On', musicOff: '♪ Music: Off', allClear: 'You cleared all 60 levels!',
-      bonus: 'BONUS LEVEL: gold everywhere!', boss: 'BOSS LEVEL: giant nugget!',
+      bonus: 'BONUS LEVEL: short timer, easy gold!', boss: 'BOSS LEVEL: giant nugget!',
       worlds: ['Meadow', 'Desert', 'Cave', 'Ice Peak', 'Volcano', 'Sea Floor'],
       tips: [
         'Big gold is heavy and slow. Diamonds are light and pricey!',
@@ -134,6 +135,7 @@
         earn: (g) => `Earn $${g} for your wallet`, rush: (g) => `Play Gold Rush ${g} time${g > 1 ? 's' : ''}`, dyn: (g) => `Use ${g} dynamite`, rescue: (g) => `Escape ${g} time${g > 1 ? 's' : ''}`,
         stars: (g) => `Collect ${g} ⭐`, up: (g) => `Reach ${g} upgrade levels`, rushRec: (g) => `Gold Rush record $${g}` },
       worldClear: (w) => `Clear ${w}`,
+      revive: '📺 Ad: Revive & continue', revived: '💪 Revived!', reviveMon: 'Money kept, the monster left', reviveTime: (s) => `Money kept, +${s} seconds`,
       dClaw: 'Easier to grab things', dWinch: 'Pull everything up faster', dDrop: 'Hook shoots down faster', dTime: 'More time every level',
     },
   };
@@ -676,7 +678,7 @@
   }
 
   function startLevel() {
-    rush = false; refreshQuests();
+    rush = false; reviveUsed = false; refreshQuests();
     lvl = build(n);
     items = lvl.items;
     score = 0; shownScore = 0; timeLeft = lvl.time + 4 * save.up.time; combo = 0;
@@ -714,6 +716,27 @@
       last = performance.now();
     }
     then(ok);
+  }
+
+  // Thua: chơi lại màn từ đầu, hoặc xem QC tặng thưởng để hồi sinh (một lần mỗi lượt chơi), giữ nguyên tiền đang có
+  const REVIVE_TIME = 15;
+  let reviveUsed = false;
+  const canRevive = () => !!result && !result.win && !result.rush && !reviveUsed && sdk.canAds()
+    && (result.eatenBy || items.some(i => !JUNK.has(i.kind)));
+  function revive() {
+    withAd('reward', (ok) => {
+      state = 'result';
+      if (!ok || !canRevive()) return;
+      reviveUsed = true;
+      save.wallet -= result.earned; track('earn', -result.earned); persist();   // tiền nửa màn chưa tính, chơi tiếp
+      const eaten = result.eatenBy;
+      if (eaten) { mon = null; nextMonT = nextGap() + 3; caughtT = 0; } else timeLeft = REVIVE_TIME;
+      timeLeft = Math.max(timeLeft, 8);
+      hook.mode = 'swing'; hook.len = BASE_LEN; hook.item = null; hook.phase = 0; combo = 0;
+      result = null; confetti = [];
+      banner = { head: L.revived, sub: eaten ? L.reviveMon : L.reviveTime(REVIVE_TIME), life: 2 };
+      sfx.big(); state = 'play';
+    }, 'revive-1');
   }
 
   // Điểm dừng tự nhiên giữa các màn
@@ -878,6 +901,7 @@
     if (state === 'shop' && /^Digit[1-5]$/.test(e.code)) { buy(SHOP[+e.code.slice(5) - 1]); return; }
     if (state === 'upgrade' && /^Digit[1-4]$/.test(e.code)) { buyUpgrade(UPGRADES[+e.code.slice(5) - 1]); return; }
     if (state === 'map' && e.code === 'KeyU') { openUpgrades('map'); return; }
+    if (state === 'result' && e.code === 'KeyV' && canRevive()) { revive(); return; }
     if (state === 'menu' && e.code === 'KeyR' && rushOpen()) { startRush(); return; }
     if (state === 'menu' && e.code === 'KeyG') { openPopup('daily'); return; }
     if (state === 'menu' && e.code === 'KeyQ') { openPopup('quests'); return; }
@@ -1477,7 +1501,8 @@
     const showDouble = result.win && result.earned > 0 && sdk.canAds();
     const myUp = save.up.claw + save.up.winch + save.up.drop + save.up.time;
     const showHint = !result.win && myUp < 20;   // thua: gợi ý nâng cấp
-    const ph = showDouble ? 396 : showHint ? 420 : 340, py = Math.max(8, Math.min(H / 2 - ph / 2, H - ph - 10));
+    const showRevive = canRevive();
+    const ph = showDouble ? 396 : (showHint ? 420 : 340) + (showRevive ? 58 : 0), py = Math.max(8, Math.min(H / 2 - ph / 2, H - ph - 10));
     panel(40, py, W - 80, ph);
     text(result.win ? L.win : result.eatenBy ? L.ouch : L.lose, W / 2, py + 42, 36, result.win ? '#7dff7a' : '#ff6b6b');
     for (let k = 0; k < 3; k++) Art.star(ctx, W / 2 - 60 + k * 60, py + 100, 24, result.stars > k);
@@ -1494,6 +1519,7 @@
       button(W / 2 - 130, by - 62, 260, 48, '⚙ ' + L.upgrades, () => betweenLevels(() => { openShop(n); openUpgrades('shop'); }), '#d98a1f', true, 20);
     }
     if (showDouble) doubleButton(W / 2 - 150, by - 58, 300);
+    if (showRevive) button(W / 2 - 160, by - (showHint ? 120 : 62), 320, 50, L.revive, revive, '#2f6fd0', true, 20);
     button(60, by, 140, 48, L.map, () => betweenLevels(() => goMap(Math.floor((n - 1) / PER_WORLD))), '#5a4a3a');
     if (result.win && n < COUNT) {
       button(210, by, 140, 48, L.retry, () => betweenLevels(() => openShop(n)), '#e8a33a');
