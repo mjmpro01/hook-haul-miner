@@ -156,7 +156,7 @@
   function resize() {
     const cw = window.innerWidth, ch = window.innerHeight;
     dpr = Math.min(window.devicePixelRatio || 1, 3);
-    H = Math.round(Math.min(1400, Math.max(460, W * ch / cw)));
+    H = Math.round(Math.min(1400, Math.max(640, W * ch / cw)));   // màn ngang: tối thiểu 640 để phần đất đủ sâu (thêm viền hai bên)
     scale = Math.min(cw / W, ch / H);
     canvas.style.width = Math.round(W * scale) + 'px';
     canvas.style.height = Math.round(H * scale) + 'px';
