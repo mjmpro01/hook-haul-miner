@@ -95,7 +95,7 @@
         earn: (g) => `Kiếm $${g} vào ví`, rush: (g) => `Chơi Cơn sốt vàng ${g} lần`, dyn: (g) => `Dùng ${g} thuốc nổ`, rescue: (g) => `Thoát hiểm ${g} lần`,
         stars: (g) => `Thu ${g} ⭐`, up: (g) => `Nâng cấp tổng ${g} cấp`, rushRec: (g) => `Kỷ lục Cơn sốt vàng $${g}` },
       worldClear: (w) => `Phá đảo ${w}`,
-      dClaw: 'Dễ móc trúng đồ hơn', dWinch: 'Kéo mọi thứ lên nhanh hơn', dDrop: 'Móc lao xuống nhanh hơn', dTime: '+4 giây mỗi màn',
+      dClaw: 'Dễ móc trúng đồ hơn', dWinch: 'Kéo mọi thứ lên nhanh hơn', dDrop: 'Móc lao xuống nhanh hơn', dTime: 'Thêm giờ mỗi màn',
     },
     en: {
       title: 'Hook & Haul Miner', tapStart: 'Tap to start', total: 'Total score',
@@ -134,7 +134,7 @@
         earn: (g) => `Earn $${g} for your wallet`, rush: (g) => `Play Gold Rush ${g} time${g > 1 ? 's' : ''}`, dyn: (g) => `Use ${g} dynamite`, rescue: (g) => `Escape ${g} time${g > 1 ? 's' : ''}`,
         stars: (g) => `Collect ${g} ⭐`, up: (g) => `Reach ${g} upgrade levels`, rushRec: (g) => `Gold Rush record $${g}` },
       worldClear: (w) => `Clear ${w}`,
-      dClaw: 'Easier to grab things', dWinch: 'Pull everything up faster', dDrop: 'Hook shoots down faster', dTime: '+4 seconds every level',
+      dClaw: 'Easier to grab things', dWinch: 'Pull everything up faster', dDrop: 'Hook shoots down faster', dTime: 'More time every level',
     },
   };
   let L = STR.en;
@@ -447,9 +447,9 @@
   let state = 'loading'; // menu | map | shop | play | pause | result
   let paused = false;    // do YouTube yêu cầu
   let lvl = null, n = 1, score = 0, timeLeft = 60, items = [];
-  let perks = {}, floats = [], particles = [], buttons = [], booms = [], happyT = 0;
+  let perks = {}, floats = [], particles = [], buttons = [], booms = [], happyT = 0, rings = [], upFlash = null;
   let mon = null, nextMonT = Infinity, caughtT = 0;
-  let combo = 0, shownScore = 0, scorePop = 0, flashT = 0, coins = [], confetti = [];
+  let bonusT = 0, combo = 0, shownScore = 0, scorePop = 0, flashT = 0, coins = [], confetti = [];
   const comboMul = () => (combo >= 5 ? 2 : combo >= 3 ? 1.5 : 1);
   const COMBO_BREAK = new Set(['rock', 'lava', 'anchor', 'bone', 'skull']);
   const CONF_COLORS = ['#ffd23f', '#ff6b6b', '#7dff7a', '#6fd6ff', '#b07aff', '#ffffff'];
@@ -484,6 +484,8 @@
   ];
   const upName = { claw: 'upClaw', winch: 'upWinch', drop: 'upDrop', time: 'upTime' };
   const upDesc = { claw: 'dClaw', winch: 'dWinch', drop: 'dDrop', time: 'dTime' };
+  // Chỉ số hiển thị cho từng cấp (khớp với grabBonus / pullMul / dropSpeed / thời gian)
+  const upEffect = (id, lv) => (id === 'time' ? `+${4 * lv}s` : `+${(id === 'claw' ? 15 : 12) * lv}%`);
   const upPrice = (u) => (save.up[u.id] < 5 ? u.prices[save.up[u.id]] : null);
   const canUpgrade = () => UPGRADES.some(u => upPrice(u) !== null && save.wallet >= upPrice(u));
   const grabBonus = () => 4 * save.up.claw;                          // bán kính kẹp +4/cấp
@@ -495,6 +497,7 @@
     const price = upPrice(u);
     if (price === null || save.wallet < price) { sfx.thud(); return; }
     save.wallet -= price; save.up[u.id]++; sfx.buy(); persist();
+    upFlash = { id: u.id, t: 1.2 };
     for (let i = 0; i < 24; i++) confetti.push(makeConfetti(W / 2 + (Math.random() - 0.5) * 200, H * 0.35));
   }
   let upFrom = 'map';
@@ -677,6 +680,7 @@
     lvl = build(n);
     items = lvl.items;
     score = 0; shownScore = 0; timeLeft = lvl.time + 4 * save.up.time; combo = 0;
+    bonusT = save.up.time > 0 ? 3 : 0;   // Thêm giờ: hiện "+Ns" cạnh đồng hồ vài giây đầu
     hook.mode = 'swing'; hook.len = BASE_LEN; hook.item = null; hook.phase = 0;
     floats = []; particles = []; result = null;
     layoutItems();
@@ -1033,6 +1037,9 @@
     for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 300 * dt; p.life -= dt; }
     particles = particles.filter(p => p.life > 0);
     for (const b of booms) b.p += dt / 0.55;
+    for (const r of rings) r.life -= dt;
+    rings = rings.filter(r => r.life > 0);
+    if (upFlash) { upFlash.t -= dt; if (upFlash.t <= 0) upFlash = null; }
     booms = booms.filter(b => b.p < 1);
     happyT = Math.max(0, happyT - dt);
     flashT = Math.max(0, flashT - dt);
@@ -1047,6 +1054,7 @@
     floats = floats.filter(f => f.life > 0);
     if (banner && (banner.life -= dt) <= 0) banner = null;
     if (toast && (toast.life -= dt) <= 0) toast = null;
+    bonusT = Math.max(0, bonusT - dt);
 
     if (state === 'caught') { updateCaught(dt); return; }
     if (state !== 'play') return;
@@ -1090,12 +1098,16 @@
           if (it.critter) sfx.squeak(); else sfx.grab();
           if (lvl.worldId === 'sea') sfx.splash();
           hook.item = it;
+          if (save.up.claw > 0) rings.push({ x: t.x, y: t.y, r: it.r + 6 + grabBonus(), life: 0.35 });   // Móc to: vòng tầm kẹp
           break;
         }
       }
       if (hook.mode === 'extend' && (t.x < 0 || t.x > W || t.y > H)) hook.mode = 'retract';
     } else if (hook.mode === 'retract') {
       hook.len -= pullSpeed() * dt;
+      if (hook.item && save.up.winch > 0 && Math.random() < dt * 10 * save.up.winch) {   // Tời khoẻ: tia lửa ở ròng rọc
+        particles.push({ x: OX + (Math.random() - 0.5) * 20, y: OY + 4, vx: (Math.random() - 0.5) * 160, vy: -60 - Math.random() * 100, life: 0.45, r: 1.5 + Math.random() * 1.5, c: Math.random() < 0.5 ? '#ffe066' : '#ff9a2e' });
+      }
       if (hook.item) {
         const t = tip();
         hook.item.x = t.x + Math.sin(hook.angle) * hook.item.r * 0.8;
@@ -1160,6 +1172,11 @@
     if (comboMul() > 1) text(`🔥 x${comboMul()}`, compact ? W - 14 : W / 2 + 70, compact ? 80 : 22, 18, '#ff9a2e', compact ? 'right' : 'center');
     text(rush ? `🏆 ${L.record}: $${save.rushBest}` : `${L.target}: $${lvl.target}`, 14, 46, 17, '#ffffff', 'left');
     text(`${L.time}: ${Math.ceil(timeLeft)}`, W - 14, 20, 20, timeLeft <= 10 ? '#ff6b6b' : '#fff', 'right');
+    if (bonusT > 0 && !rush) {
+      ctx.globalAlpha = Math.min(1, bonusT);
+      text(`⏱ +${4 * save.up.time}s`, W - 14, compact ? 98 : 84 - (3 - bonusT) * 6, 18, '#7dff7a', 'right');
+      ctx.globalAlpha = 1;
+    }
     text(rush ? '⚡ ' + L.rush : `${L.level} ${n}`, W - 14, 46, 17, rush ? '#ffd23f' : '#fff', 'right');
     const sx = compact ? 22 : W / 2 - 60, sy = compact ? 78 : 52;
     if (!rush) for (let k = 0; k < 3; k++) Art.star(ctx, sx + k * 18, sy, 7, score >= lvl.stars[k]);
@@ -1412,7 +1429,13 @@
       const im = u.sprite && Art.spr(u.sprite);
       if (im) Art.blit(ctx, im, 80, y + m, 40); else text(u.icon, 80, y + m, 28);
       text(L[upName[u.id]], 112, y + m - 13, 18, '#fff', 'left');
-      text(L[upDesc[u.id]], 112, y + m + 10, 13, '#ddd', 'left', 'normal');
+      const fx = upEffect(u.id, lv), nx = lv < 5 ? upEffect(u.id, lv + 1) : null;
+      text(L[upDesc[u.id]] + `: ${fx}` + (nx ? ` → ${nx}` : ''), 112, y + m + 10, 13, '#ddd', 'left', 'normal');
+      if (upFlash && upFlash.id === u.id) {   // vừa mua: dòng loé sáng + chữ LÊN CẤP
+        const k = upFlash.t / 1.2;
+        ctx.fillStyle = `rgba(255,224,102,${0.35 * k})`; ctx.beginPath(); ctx.roundRect(46, y, W - 92, h, 12); ctx.fill();
+        text(`${L.lvShort} ${lv}!`, W - 114, y + m - 26 - (1 - k) * 14, 18, '#7dff7a');
+      }
       for (let k = 0; k < 5; k++) {   // 5 vạch cấp
         ctx.fillStyle = k < lv ? '#ffd23f' : 'rgba(255,255,255,0.18)';
         ctx.beginPath(); ctx.roundRect(112 + k * 22, y + m + 21, 18, 6, 3); ctx.fill();
@@ -1515,10 +1538,17 @@
       yank: state === 'caught' ? Math.max(0, Math.min(1, (caughtT - 0.35) / 1.2)) : 0,
     });
     if (inLevel && state !== 'result') {
-      Art.drawHook(ctx, OX, OY, hook.angle, hook.len, !!hook.item);
+      if (hook.mode === 'extend' && save.up.drop > 0) {   // Thả nhanh: bóng mờ phía sau móc
+        for (let k = save.up.drop; k >= 1; k--) Art.drawHook(ctx, OX, OY, hook.angle, Math.max(BASE_LEN, hook.len - k * 16), false, save.up, 0.2 + 0.08 * (save.up.drop - k));
+      }
+      Art.drawHook(ctx, OX, OY, hook.angle, hook.len, !!hook.item, save.up);
       if (hook.item) Art.drawItem(ctx, hook.item, now);
     }
     for (const b of booms) Art.boom(ctx, b.x, b.y, b.size, b.p);
+    for (const r of rings) {
+      ctx.strokeStyle = `rgba(255,224,102,${r.life / 0.35})`; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(r.x, r.y, r.r * (1.15 - 0.15 * r.life / 0.35), 0, 7); ctx.stroke();
+    }
     for (const p of particles) { ctx.globalAlpha = Math.max(0, p.life); ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 7); ctx.fill(); }
     ctx.globalAlpha = 1;
     for (const f of floats) { ctx.globalAlpha = Math.min(1, f.life); text(f.text, f.x, f.y, f.big ? 30 : 22, f.color || '#ffe066', f.center ? 'center' : 'left'); }

@@ -670,14 +670,26 @@
     ctx.strokeStyle = '#8a5a3a'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(mx - 2, my - 35, 3, 0.2, Math.PI - 0.2); ctx.stroke();
   }
 
-  function drawHook(ctx, OX, OY, angle, len, closed) {
+  // up: { claw, winch } cấp nâng cấp => móc to hơn + ánh vàng, dây tời to & sáng màu thép hơn
+  // ghost: chỉ vẽ móc mờ (bóng mờ khi lao nhanh), không vẽ dây
+  function drawHook(ctx, OX, OY, angle, len, closed, up = {}, ghost = 0) {
     const tx = OX + Math.sin(angle) * len, ty = OY + Math.cos(angle) * len;
     const hk = spr(closed ? 'hook_closed' : 'hook_open');
+    const claw = up.claw || 0, winch = up.winch || 0;
     if (hk) {
-      ctx.strokeStyle = '#6b4a2a'; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.moveTo(OX, OY); ctx.lineTo(tx, ty); ctx.stroke();
-      const h = 46, w = hk.width * h / hk.height;
+      if (!ghost) {
+        const rope = ['#6b4a2a', '#6f5a44', '#77706a', '#8a8f96', '#a3adb8', '#c9d3dd'][winch];
+        ctx.strokeStyle = rope; ctx.lineWidth = 3 + winch * 0.35;
+        ctx.beginPath(); ctx.moveTo(OX, OY); ctx.lineTo(tx, ty); ctx.stroke();
+        if (winch >= 3) {   // dây cáp thép: thêm vệt sáng
+          ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(OX + 1, OY); ctx.lineTo(tx + 1, ty); ctx.stroke();
+        }
+      }
+      const h = 46 * (1 + 0.08 * claw), w = hk.width * h / hk.height;
       ctx.save(); ctx.translate(tx, ty); ctx.rotate(-angle);
+      if (ghost) ctx.globalAlpha *= ghost;
+      if (claw > 0 && !ghost) { ctx.shadowColor = claw >= 4 ? '#ffd23f' : '#ffe9a0'; ctx.shadowBlur = 3 + claw * 3; }
       ctx.drawImage(hk, -w / 2, -h * 0.45, w, h);
       ctx.restore();
       return { x: tx, y: ty };
